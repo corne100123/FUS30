@@ -60,6 +60,10 @@ if 'session_loaded' not in st.session_state:
 app_name = st.session_state.config['business_name'] if st.session_state.config else "FUS30"
 st.set_page_config(page_title=f"{app_name} | FUS30 Suite", layout="wide")
 
+# Show the active workspace database path for persistence visibility
+if st.session_state.config and st.session_state.config.get('db_path'):
+    st.sidebar.info(f"Active DB:\n{st.session_state.config.get('db_path')}")
+
 @st.cache_data(ttl=3600)
 def check_for_updates():
     try:
@@ -156,6 +160,7 @@ if not st.session_state.tenant_id or not st.session_state.role:
                         st.session_state.user_id = user_id
                         st.session_state.username = admin_username
                         st.session_state.full_name = admin_name
+                        save_config(business_name, db_path)
                         save_session({
                             'tenant_id': tenant_id,
                             'tenant_name': business_name,
@@ -194,6 +199,7 @@ if not st.session_state.tenant_id or not st.session_state.role:
                             st.session_state.user_id = user['user_id']
                             st.session_state.username = user['username']
                             st.session_state.full_name = user['full_name']
+                            save_config(tenant['business_name'], db_path)
                             save_session({
                                 'tenant_id': tenant['tenant_id'],
                                 'tenant_name': tenant['business_name'],
