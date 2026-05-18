@@ -2,7 +2,7 @@ import streamlit as st
 import sqlite3
 import os
 from rebuild_database import rebuild_clients
-from config import load_config, save_config, get_default_db_path
+from config import load_config, save_config, get_default_db_path, load_session, save_session, clear_session
 from db_helpers import (
     initialize_schema,
     register_tenant,
@@ -10,6 +10,8 @@ from db_helpers import (
     find_tenant,
     create_user,
     authenticate_user,
+    get_tenant_by_id,
+    get_user,
 )
 from fix_all_tables import run_fix
 
@@ -26,6 +28,34 @@ if 'tenant_id' not in st.session_state:
 
 if 'tenant_name' not in st.session_state:
     st.session_state.tenant_name = None
+
+if 'user_id' not in st.session_state:
+    st.session_state.user_id = None
+
+if 'username' not in st.session_state:
+    st.session_state.username = None
+
+if 'full_name' not in st.session_state:
+    st.session_state.full_name = None
+
+if 'session_loaded' not in st.session_state:
+    session_data = load_session()
+    if session_data:
+        config = st.session_state.config
+        if config and config.get('db_path'):
+            db_path = config.get('db_path', get_default_db_path())
+            tenant = get_tenant_by_id(db_path, session_data.get('tenant_id')) if session_data.get('tenant_id') else None
+            user = get_user(db_path, session_data.get('tenant_id'), session_data.get('username')) if session_data.get('tenant_id') and session_data.get('username') else None
+            if tenant and user:
+                st.session_state.tenant_id = session_data.get('tenant_id')
+                st.session_state.tenant_name = session_data.get('tenant_name')
+                st.session_state.role = session_data.get('role')
+                st.session_state.user_id = session_data.get('user_id')
+                st.session_state.username = session_data.get('username')
+                st.session_state.full_name = session_data.get('full_name')
+            else:
+                clear_session()
+    st.session_state.session_loaded = True
 
 app_name = st.session_state.config['business_name'] if st.session_state.config else "FUS30"
 st.set_page_config(page_title=f"{app_name} | FUS30 Suite", layout="wide")
@@ -126,6 +156,14 @@ if not st.session_state.tenant_id or not st.session_state.role:
                         st.session_state.user_id = user_id
                         st.session_state.username = admin_username
                         st.session_state.full_name = admin_name
+                        save_session({
+                            'tenant_id': tenant_id,
+                            'tenant_name': business_name,
+                            'role': 'Admin',
+                            'user_id': user_id,
+                            'username': admin_username,
+                            'full_name': admin_name,
+                        })
                         st.success("Business registered successfully. You are now logged in as Admin.")
                         st.rerun()
     else:
@@ -156,6 +194,14 @@ if not st.session_state.tenant_id or not st.session_state.role:
                             st.session_state.user_id = user['user_id']
                             st.session_state.username = user['username']
                             st.session_state.full_name = user['full_name']
+                            save_session({
+                                'tenant_id': tenant['tenant_id'],
+                                'tenant_name': tenant['business_name'],
+                                'role': user['role'],
+                                'user_id': user['user_id'],
+                                'username': user['username'],
+                                'full_name': user['full_name'],
+                            })
                             st.success(f"Logged in as {user['role']} for {tenant['business_name']}")
                             st.rerun()
     st.stop()
@@ -231,4 +277,5 @@ if st.sidebar.button("Logout"):
     st.session_state.username = None
     st.session_state.user_id = None
     st.session_state.full_name = None
+    clear_session()
     st.rerun()
