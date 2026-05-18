@@ -1,13 +1,32 @@
 import json
 import shutil
+import tempfile
 from pathlib import Path
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_APP_HOME = WORKSPACE_ROOT / ".fus30_data"
 HOME_APP_HOME = Path.home() / ".fus30_data"
+TMP_APP_HOME = Path(tempfile.gettempdir()) / ".fus30_data"
 
-APP_HOME = WORKSPACE_APP_HOME
-APP_HOME.mkdir(parents=True, exist_ok=True)
+
+def _try_create_path(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        return True
+    except (PermissionError, OSError):
+        return False
+
+
+def _select_app_home() -> Path:
+    for candidate in (WORKSPACE_APP_HOME, HOME_APP_HOME, TMP_APP_HOME):
+        if _try_create_path(candidate):
+            return candidate
+    raise RuntimeError(
+        "Unable to create a writable FUS30 storage directory. "
+        "Please ensure the app has write access to either the workspace, home, or temp directory."
+    )
+
+APP_HOME = _select_app_home()
 
 CONFIG_PATH = APP_HOME / "fus30_config.json"
 DEFAULT_DB_NAME = "fus30_operational.db"

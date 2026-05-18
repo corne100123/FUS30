@@ -1,6 +1,7 @@
-import streamlit as st
 import sqlite3
-import os
+from pathlib import Path
+
+import streamlit as st
 from rebuild_database import rebuild_clients
 from config import load_config, save_config, get_default_db_path, load_session, save_session, clear_session
 from db_helpers import (
@@ -91,8 +92,8 @@ if not st.session_state.config:
 
         if st.form_submit_button("Initialize Local Database"):
             if db_path:
+                db_path = ensure_db_path(db_path)
                 st.session_state.config = save_config("FUS30", db_path)
-                os.makedirs(os.path.dirname(db_path), exist_ok=True)
                 initialize_schema(db_path)
                 st.success("Local database initialized. Continue to register or login.")
                 st.rerun()
@@ -101,10 +102,30 @@ if not st.session_state.config:
     st.stop()
 
 
+def ensure_db_path(db_path):
+    if not db_path:
+        db_path = get_default_db_path()
+
+    path = Path(db_path)
+    parent = path.parent
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+        return str(path)
+    except PermissionError:
+        fallback = get_default_db_path()
+        if fallback != db_path:
+            fallback_path = Path(fallback)
+            fallback_path.parent.mkdir(parents=True, exist_ok=True)
+            if st.session_state.config:
+                save_config(st.session_state.config.get('business_name', 'FUS30'), fallback)
+            return fallback
+        raise
+
+
 def init_db():
     if st.session_state.config:
         db_path = st.session_state.config.get('db_path', get_default_db_path())
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        db_path = ensure_db_path(db_path)
         initialize_schema(db_path)
 
 
@@ -113,7 +134,7 @@ def get_db():
         st.error("Database path not configured. Please complete the setup wizard.")
         st.stop()
     db_path = st.session_state.config.get('db_path', get_default_db_path())
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    db_path = ensure_db_path(db_path)
     return sqlite3.connect(db_path)
 
 init_db()
