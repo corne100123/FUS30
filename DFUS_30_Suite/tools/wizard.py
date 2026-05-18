@@ -23,6 +23,7 @@ def calculate_nca_min_expense(gross):
 # --- 3. MAIN LOAN TOOL ---
 def run(get_db, audit_tool_ignored):
     st.header("💸 New Loan Issue Tool")
+    tenant_id = st.session_state.tenant_id
     
     # --- STEP 1: FIND THE CUSTOMER (UPDATED) ---
     st.subheader("1. Select Borrower")
@@ -32,10 +33,10 @@ def run(get_db, audit_tool_ignored):
     client_list = []
     try:
         with get_db() as conn:
-            query = "SELECT client_id, first_name, last_name, id_number FROM clients"
+            query = "SELECT client_id, first_name, last_name, id_number FROM clients WHERE tenant_id = ?"
             if st.session_state.get('role') == 'Agent':
-                query += f" WHERE assigned_agent_id = {st.session_state.user_id}"
-            df_all = pd.read_sql_query(query, conn)
+                query += f" AND assigned_agent_id = {st.session_state.user_id}"
+            df_all = pd.read_sql_query(query, conn, params=(tenant_id,))
             if not df_all.empty:
                 # Create a nice list of strings like "John Doe (900101...)"
                 df_all['display_name'] = df_all['first_name'] + " " + df_all['last_name'] + " (" + df_all['id_number'] + ")"
@@ -66,7 +67,7 @@ def run(get_db, audit_tool_ignored):
         selected_id = selected_string.split('(')[-1].replace(')', '')
         
         with get_db() as conn:
-            client = pd.read_sql_query("SELECT * FROM clients WHERE id_number = ?", conn, params=(selected_id,)).iloc[0]
+            client = pd.read_sql_query("SELECT * FROM clients WHERE tenant_id=? AND id_number = ?", conn, params=(tenant_id, selected_id)).iloc[0]
             
         st.success(f"Selected: {client['first_name']} {client['last_name']}")
         
@@ -80,7 +81,7 @@ def run(get_db, audit_tool_ignored):
             if st.session_state.get('role') in ['Admin', 'Manager']:
                 try:
                     with get_db() as conn:
-                        agents_df = pd.read_sql_query("SELECT user_id, full_name, username FROM users WHERE role = 'Agent' AND is_active = 1", conn)
+                        agents_df = pd.read_sql_query("SELECT user_id, full_name, username FROM users WHERE tenant_id=? AND role = 'Agent' AND is_active = 1", conn, params=(tenant_id,))
                         if not agents_df.empty:
                             agent_options = {f"{r['full_name']} ({r['username']})": r['user_id'] for _, r in agents_df.iterrows()}
                             selected_agent_label = st.selectbox("Allocate to Agent", options=list(agent_options.keys()))
@@ -160,15 +161,15 @@ def run(get_db, audit_tool_ignored):
                             else:
                                 agent_username = st.session_state.get('username')
                                 if agent_username:
-                                    agent_res = cursor.execute("SELECT user_id FROM users WHERE username = ?", (agent_username,)).fetchone()
+                                    agent_res = cursor.execute("SELECT user_id FROM users WHERE tenant_id=? AND username = ?", (tenant_id, agent_username)).fetchone()
                                     agent_id = agent_res[0] if agent_res else None
                                 else:
                                     agent_id = None
 
                             cursor.execute("""
-                                INSERT INTO loans (client_id, principal, balance, status, due_date, agent_id)
-                                VALUES (?, ?, ?, 'Active', DATE('now', '+30 days'), ?)
-                            """, (int(client['client_id']), float(principal), float(total_repay), agent_id))
+                                INSERT INTO loans (tenant_id, client_id, principal, balance, status, due_date, agent_id)
+                                VALUES (?, ?, ?, ?, 'Active', DATE('now', '+30 days'), ?)
+                            """, (tenant_id, int(client['client_id']), float(principal), float(total_repay), agent_id))
 
                             conn.commit()
                             st.balloons()

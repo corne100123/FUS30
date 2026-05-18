@@ -17,14 +17,16 @@ def run(get_db):
             st.info("Please search for a client to begin editing.")
         else:
             with get_db() as conn:
-                query = f"""
+                query = """
                     SELECT * FROM clients 
-                    WHERE first_name LIKE '%{search_term}%' 
-                    OR last_name LIKE '%{search_term}%' 
-                    OR id_number LIKE '%{search_term}%'
+                    WHERE tenant_id = ? AND (
+                        first_name LIKE ? 
+                        OR last_name LIKE ? 
+                        OR id_number LIKE ?
+                    )
                 """
                 search_param = f"%{search_term}%"
-                results = pd.read_sql_query(query, conn, params=(search_param, search_param, search_param))
+                results = pd.read_sql_query(query, conn, params=(tenant_id, search_param, search_param, search_param))
 
             if results.empty:
                 st.warning("No clients found.")
@@ -55,8 +57,8 @@ def run(get_db):
                         
                         if st.form_submit_button("💾 Update Personal Info"):
                             with get_db() as conn:
-                                conn.execute("UPDATE clients SET first_name=?, last_name=?, id_number=?, phone=?, address=? WHERE client_id=?",
-                                            (new_first, new_last, new_id, new_phone, new_addr, client_id))
+                                conn.execute("UPDATE clients SET first_name=?, last_name=?, id_number=?, phone=?, address=? WHERE tenant_id=? AND client_id=?",
+                                            (new_first, new_last, new_id, new_phone, new_addr, tenant_id, client_id))
                                 conn.commit()
                             st.success("Personal details updated.")
 
@@ -71,8 +73,8 @@ def run(get_db):
                         
                         if st.form_submit_button("💾 Update Employment/Bank"):
                             with get_db() as conn:
-                                conn.execute("UPDATE clients SET employer=?, total_gross=?, bank_name=?, account_no=? WHERE client_id=?",
-                                            (new_emp, new_gross, new_bank, new_acc, client_id))
+                                conn.execute("UPDATE clients SET employer=?, total_gross=?, bank_name=?, account_no=? WHERE tenant_id=? AND client_id=?",
+                                            (new_emp, new_gross, new_bank, new_acc, tenant_id, client_id))
                                 conn.commit()
                             st.success("Employment and Banking info updated.")
 
@@ -81,7 +83,7 @@ def run(get_db):
                     st.subheader("Manage Active Loans")
                     
                     with get_db() as conn:
-                        loans = pd.read_sql_query(f"SELECT * FROM loans WHERE client_id = {client_id}", conn)
+                        loans = pd.read_sql_query("SELECT * FROM loans WHERE tenant_id = ? AND client_id = ?", conn, params=(tenant_id, client_id))
                     
                     if loans.empty:
                         st.info("This client has no existing loans.")
@@ -107,7 +109,7 @@ def run(get_db):
                             
                             if st.form_submit_button("⚠️ Apply Balance/Status Change"):
                                 with get_db() as conn:
-                                    conn.execute("UPDATE loans SET balance=?, status=? WHERE loan_id=?", (new_bal, new_status, target_id))
+                                    conn.execute("UPDATE loans SET balance=?, status=? WHERE tenant_id=? AND loan_id=?", (new_bal, new_status, tenant_id, target_id))
                                     conn.commit()
                                 st.success("Loan balance and status updated.")
                                 st.rerun()
@@ -122,7 +124,7 @@ def run(get_db):
                                 if fee_amount > 0:
                                     with get_db() as conn:
                                         # 1. Increase the loan balance
-                                        conn.execute("UPDATE loans SET balance = balance + ? WHERE loan_id = ?", (fee_amount, target_id))
+                                        conn.execute("UPDATE loans SET balance = balance + ? WHERE tenant_id=? AND loan_id = ?", (fee_amount, tenant_id, target_id))
                                         # 2. Record it in payment history as a negative 'Adjustment' for record-keeping if needed, 
                                         # or just update the balance as we did here.
                                         conn.commit()
@@ -437,9 +439,9 @@ def run(get_db):
                             
                             with get_db() as conn:
                                 # Get existing phones and IDs for duplicate checking
-                                existing_phones = set(conn.execute("SELECT phone FROM clients WHERE phone != ''").fetchall())
+                                existing_phones = set(conn.execute("SELECT phone FROM clients WHERE tenant_id=? AND phone != ''", (tenant_id,)).fetchall())
                                 existing_phones = {phone[0] for phone in existing_phones}
-                                existing_ids = set(conn.execute("SELECT id_number FROM clients WHERE id_number != ''").fetchall())
+                                existing_ids = set(conn.execute("SELECT id_number FROM clients WHERE tenant_id=? AND id_number != ''", (tenant_id,)).fetchall())
                                 existing_ids = {id_num[0] for id_num in existing_ids}
                                 
                                 # Batch insert clients (every 50 records)
@@ -483,11 +485,11 @@ def run(get_db):
                                                 row_num = row_data[-1]
                                                 insert_data = row_data[:-1]
                                                 cursor.execute("""
-                                                    INSERT INTO clients (first_name, last_name, id_number, phone, email, address,
+                                                    INSERT INTO clients (tenant_id, first_name, last_name, id_number, phone, email, address,
                                                                        total_gross, salary, employer, work_days, pay_day,
                                                                        bank_name, account_no, status)
-                                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                                """, insert_data)
+                                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                """, (tenant_id,) + insert_data)
                                                 client_id_map[row_num] = cursor.lastrowid
                                                 imported_count += 1
                                             conn.commit()
@@ -503,9 +505,9 @@ def run(get_db):
                                             if client_row in client_id_map:
                                                 loan_data['client_id'] = client_id_map[client_row]
                                                 conn.execute("""
-                                                    INSERT INTO loans (client_id, due_date, principal, balance, amount_paid, status)
-                                                    VALUES (?, ?, ?, ?, ?, ?)
-                                                """, (loan_data['client_id'], loan_data['due_date'], loan_data['principal'],
+                                                    INSERT INTO loans (tenant_id, client_id, due_date, principal, balance, amount_paid, status)
+                                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                                """, (tenant_id, loan_data['client_id'], loan_data['due_date'], loan_data['principal'],
                                                       loan_data['balance'], loan_data['amount_paid'], loan_data['status']))
                                         except Exception as e:
                                             st.error(f"Loan creation error: {str(e)}")
@@ -579,20 +581,20 @@ def run(get_db):
                                         client_identifier = None
                                         if has_client_no and pd.notna(row.get('Client No')):
                                             client_identifier = str(row['Client No']).strip()
-                                            client_query = "SELECT client_id FROM clients WHERE id_number = ?"
+                                            client_query = "SELECT client_id FROM clients WHERE tenant_id=? AND id_number = ?"
                                         elif has_mobile:
                                             client_identifier = str(row['Mobile']).strip()
-                                            client_query = "SELECT client_id FROM clients WHERE phone = ?"
+                                            client_query = "SELECT client_id FROM clients WHERE tenant_id=? AND phone = ?"
                                         
-                                        client_result = conn.execute(client_query, (client_identifier,)).fetchone()
+                                        client_result = conn.execute(client_query, (tenant_id, client_identifier)).fetchone()
                                         
                                         if client_result:
                                             client_id = client_result[0]
                                             
                                             # Find active loan for this client
                                             loan_result = conn.execute(
-                                                "SELECT loan_id FROM loans WHERE client_id = ? AND status = 'Active' ORDER BY created_at DESC LIMIT 1",
-                                                (client_id,)
+                                                "SELECT loan_id FROM loans WHERE tenant_id=? AND client_id = ? AND status = 'Active' ORDER BY created_at DESC LIMIT 1",
+                                                (tenant_id, client_id)
                                             ).fetchone()
                                             
                                             if loan_result:
@@ -607,14 +609,14 @@ def run(get_db):
                                                 }
                                                 
                                                 conn.execute("""
-                                                    INSERT INTO payment_history (loan_id, amount, date, type)
-                                                    VALUES (?, ?, ?, ?)
-                                                """, tuple(payment_data.values()))
+                                                    INSERT INTO payment_history (tenant_id, loan_id, amount, date, type)
+                                                    VALUES (?, ?, ?, ?, ?)
+                                                """, (tenant_id,) + tuple(payment_data.values()))
                                                 
                                                 # Update loan balance
                                                 conn.execute(
-                                                    "UPDATE loans SET balance = balance - ?, amount_paid = amount_paid + ? WHERE loan_id = ?",
-                                                    (payment_data['amount'], payment_data['amount'], loan_id)
+                                                    "UPDATE loans SET balance = balance - ?, amount_paid = amount_paid + ? WHERE tenant_id=? AND loan_id = ?",
+                                                    (payment_data['amount'], payment_data['amount'], tenant_id, loan_id)
                                                 )
                                                 
                                                 imported_payments += 1

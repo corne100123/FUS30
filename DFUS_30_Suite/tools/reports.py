@@ -6,6 +6,11 @@ import sqlite3
 from datetime import datetime
 
 def run(get_db):
+    tenant_id = st.session_state.get('tenant_id')
+    if not tenant_id:
+        st.error("No tenant selected. Please log in again.")
+        return
+
     st.header("📊 Reports & Exports")
 
     try:
@@ -14,13 +19,15 @@ def run(get_db):
             df_clients = pd.read_sql_query("""
                 SELECT client_id, first_name, last_name, id_number, phone, status as client_status 
                 FROM clients
-            """, conn)
+                WHERE tenant_id = ?
+            """, conn, params=(tenant_id,))
             
             # Simplified query to pull essential loan data
             df_loans = pd.read_sql_query("""
                 SELECT loan_id, client_id, balance, status as loan_status, principal, due_date 
                 FROM loans
-            """, conn)
+                WHERE tenant_id = ?
+            """, conn, params=(tenant_id,))
 
     except Exception as e:
         st.error(f"Database Error: {e}")

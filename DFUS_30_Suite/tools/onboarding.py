@@ -8,6 +8,7 @@ from db_helpers import get_active_agents
 def run(get_db, audit_tool_ignored):
     st.header("📝 Client Onboarding")
     st.markdown("Enter full KYC, Employment, and Compliance details below.")
+    tenant_id = st.session_state.tenant_id
 
     # Navigation Tabs
     tab_personal, tab_employer, tab_compliance, tab_files, tab_notes = st.tabs([
@@ -20,7 +21,8 @@ def run(get_db, audit_tool_ignored):
 
     # Get active agents for assignment
     db_path = st.session_state.config['db_path']
-    active_agents = get_active_agents(db_path)
+    tenant_id = st.session_state.tenant_id
+    active_agents = get_active_agents(db_path, tenant_id)
     agent_options = ["Unassigned"] + [f"{agent['full_name']} ({agent['username']})" for agent in active_agents]
     agent_ids = [None] + [agent['user_id'] for agent in active_agents]
 
@@ -211,10 +213,10 @@ def run(get_db, audit_tool_ignored):
                         # 4. Insert into Database
                         cursor.execute("""
                             INSERT INTO clients (
-                                first_name, last_name, id_number, phone, email, address, total_gross, 
+                                tenant_id, first_name, last_name, id_number, phone, email, address, total_gross, 
                                 salary, employer, work_days, pay_day, bank_name, account_no, status, assigned_agent_id
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?)
-                        """, (first_name, last_name, id_number, phone, email, full_address, total_gross,
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?)
+                        """, (tenant_id, first_name, last_name, id_number, phone, email, full_address, total_gross,
                               net_income, emp1_name, ','.join(work_days), pay_day, bank_name, account_no, assigned_agent_id))
                         
                         conn.commit()

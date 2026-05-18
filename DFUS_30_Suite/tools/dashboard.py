@@ -4,6 +4,11 @@ import sqlite3
 from datetime import datetime, timedelta
 
 def run(get_db):
+    tenant_id = st.session_state.get('tenant_id')
+    if not tenant_id:
+        st.error("No tenant selected. Please log in again.")
+        return
+
     st.title("📊- Admin Dashboard")
 
     try:
@@ -13,23 +18,25 @@ def run(get_db):
                 SELECT l.*, u.full_name as agent_name, u.username as agent_username
                 FROM loans l
                 LEFT JOIN users u ON l.agent_id = u.user_id
+                WHERE l.tenant_id = ?
             """
-            loans = pd.read_sql_query(loans_query, conn)
+            loans = pd.read_sql_query(loans_query, conn, params=(tenant_id,))
 
             payments_query = """
                 SELECT p.*, u.full_name as agent_name, u.username as agent_username
                 FROM payment_history p
                 LEFT JOIN users u ON p.agent_id = u.user_id
+                WHERE p.tenant_id = ?
             """
-            payments = pd.read_sql_query(payments_query, conn)
+            payments = pd.read_sql_query(payments_query, conn, params=(tenant_id,))
 
             # Get active agents
             agents_query = """
                 SELECT user_id, username, full_name, role
                 FROM users
-                WHERE role = 'Agent' AND is_active = 1
+                WHERE tenant_id = ? AND role = 'Agent' AND is_active = 1
             """
-            agents = pd.read_sql_query(agents_query, conn)
+            agents = pd.read_sql_query(agents_query, conn, params=(tenant_id,))
 
     except Exception as e:
         st.error(f"Database Error: {e}")

@@ -26,7 +26,7 @@ if __name__ == "__main__":
         resolve_path(os.path.join("DFUS_30_Suite", "app.py")),
         "--global.developmentMode=false",
         "--server.port=8501",
-        "--server.address=127.0.0.1",
+        "--server.address=0.0.0.0",
         "--server.headless=true",
         "--server.enableCORS=false",
         "--server.enableXsrfProtection=false",

@@ -174,7 +174,7 @@ if role == "Agent":
         payments_tool.run(get_db, None)
     elif choice == "👤 New Client":
         from tools import onboarding
-        onboarding.run(get_db, None)
+        onboarding.run(get_db(),selected_business)
     elif choice == "➕ Issue Loan":
         from tools import wizard
         wizard.run(get_db, None)

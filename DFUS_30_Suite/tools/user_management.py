@@ -12,6 +12,11 @@ def verify_password(password, password_hash):
     return hash_password(password) == password_hash
 
 def run(get_db):
+    tenant_id = st.session_state.get('tenant_id')
+    if not tenant_id:
+        st.error("No tenant selected. Please log in again.")
+        return
+
     st.header("👥 User Management")
 
     # Check if current user is Admin
@@ -25,8 +30,9 @@ def run(get_db):
             users_df = pd.read_sql_query("""
                 SELECT user_id, username, role, full_name, email, phone, is_active, created_at, last_login
                 FROM users
+                WHERE tenant_id = ?
                 ORDER BY created_at DESC
-            """, conn)
+            """, conn, params=(tenant_id,))
 
     except Exception as e:
         st.error(f"Database Error: {e}")
@@ -80,8 +86,8 @@ def run(get_db):
                     try:
                         with get_db() as conn:
                             conn.execute(
-                                "UPDATE users SET is_active = ? WHERE username = ?",
-                                (new_status, selected_user)
+                                "UPDATE users SET is_active = ? WHERE tenant_id=? AND username = ?",
+                                (new_status, tenant_id, selected_user)
                             )
                             conn.commit()
                         st.success(f"User {selected_user} {'deactivated' if new_status == 0 else 'activated'}")
@@ -103,8 +109,8 @@ def run(get_db):
                             try:
                                 with get_db() as conn:
                                     conn.execute(
-                                        "UPDATE users SET password_hash = ? WHERE username = ?",
-                                        (hash_password(new_password), selected_user)
+                                        "UPDATE users SET password_hash = ? WHERE tenant_id=? AND username = ?",
+                                        (hash_password(new_password), tenant_id, selected_user)
                                     )
                                     conn.commit()
                                     st.success(f"Password updated for {selected_user}")
@@ -125,8 +131,8 @@ def run(get_db):
                             try:
                                 with get_db() as conn:
                                     conn.execute(
-                                        "UPDATE users SET role = ? WHERE username = ?",
-                                        (new_role, selected_user)
+                                        "UPDATE users SET role = ? WHERE tenant_id=? AND username = ?",
+                                        (new_role, tenant_id, selected_user)
                                     )
                                     conn.commit()
                                 st.success(f"Role updated for {selected_user}")

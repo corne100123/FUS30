@@ -1,12 +1,10 @@
-import os
 import io
 import streamlit as st
 import pandas as pd
-import sqlite3
 from datetime import datetime
 from fpdf import FPDF
 from docx import Document
-from docx.shared import Pt, RGBColor, Inches
+from docx.shared import Pt
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from .invoice_templates import (
     get_all_templates, get_default_template, save_template, 
@@ -29,10 +27,12 @@ class InvoicePDF(FPDF):
         self.ln(10)
 
     def footer(self):
+        include_footer = self.template.get("include_sections", {}).get("company_footer", True)
         company_footer = self.template.get("company_footer", "")
-        self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, company_footer, 0, 0, 'C')
+        if include_footer and company_footer:
+            self.set_y(-15)
+            self.set_font('Arial', 'I', 8)
+            self.cell(0, 10, company_footer, 0, 0, 'C')
 
 def generate_invoice_pdf(loan_data, client_data, payments_data, template):
     """Generate a customized PDF invoice based on template"""
@@ -126,6 +126,8 @@ def generate_invoice_docx(loan_data, client_data, payments_data, template):
     title_size = template.get("title_size", 14)
     
     title_para = doc.add_heading(title, 0)
+    if title_para.runs:
+        title_para.runs[0].font.size = Pt(title_size)
     title_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
     
     include_sections = template.get("include_sections", {})
@@ -164,37 +166,32 @@ def generate_invoice_docx(loan_data, client_data, payments_data, template):
     if include_sections.get("payment_history", True) and not payments_data.empty:
         doc.add_heading('Payment History:', level=2)
         
-        table = doc.add_table(rows=1, cols=3)
-        table.style = 'Light Grid Accent 1'
-        
         payment_fields = template.get("payment_history_fields", {})
-        hdr_cells = table.rows[0].cells
-        col_idx = 0
-        
-        if payment_fields.get("date", True):
-            hdr_cells[col_idx].text = 'Date'
-            col_idx += 1
-        if payment_fields.get("amount", True):
-            hdr_cells[col_idx].text = 'Amount'
-            col_idx += 1
-        if payment_fields.get("type", True):
-            hdr_cells[col_idx].text = 'Type'
+        visible_columns = [field for field in ["date", "amount", "type"] if payment_fields.get(field, True)]
+        if visible_columns:
+            table = doc.add_table(rows=1, cols=len(visible_columns))
+            table.style = 'Light Grid Accent 1'
+            hdr_cells = table.rows[0].cells
+            for idx, field in enumerate(visible_columns):
+                hdr_cells[idx].text = field.capitalize()
+        else:
+            table = None
         
         for _, row in payments_data.iterrows():
+            if table is None:
+                break
             row_cells = table.add_row().cells
-            col_idx = 0
-            
-            if payment_fields.get("date", True):
-                row_cells[col_idx].text = str(row['date'])
-                col_idx += 1
-            if payment_fields.get("amount", True):
-                row_cells[col_idx].text = f"R {row['amount']:.2f}"
-                col_idx += 1
-            if payment_fields.get("type", True):
-                row_cells[col_idx].text = str(row['type'])
+            for idx, field in enumerate(visible_columns):
+                if field == "date":
+                    row_cells[idx].text = str(row['date'])
+                elif field == "amount":
+                    row_cells[idx].text = f"R {row['amount']:.2f}"
+                elif field == "type":
+                    row_cells[idx].text = str(row['type'])
     
+    include_footer = template.get("include_sections", {}).get("company_footer", True)
     company_footer = template.get("company_footer", "")
-    if company_footer:
+    if include_footer and company_footer:
         doc.add_paragraph(company_footer)
     
     return doc
@@ -343,6 +340,11 @@ def run_template_editor():
         st.write(f"**Total Templates:** {len(templates)}")
 
 def run(get_db):
+    tenant_id = st.session_state.get('tenant_id')
+    if not tenant_id:
+        st.error("No tenant selected. Please log in again.")
+        return
+
     st.header("📄 Invoice Generator")
     
     # Sidebar for template management
@@ -364,8 +366,8 @@ def run(get_db):
                        c.first_name, c.last_name, c.id_number, c.phone
                 FROM loans l
                 JOIN clients c ON l.client_id = c.client_id
-                WHERE l.status = 'Active'
-            """, conn)
+                WHERE l.tenant_id = ? AND l.status = 'Active'
+            """, conn, params=(tenant_id,))
     except Exception as e:
         st.error(f"Database Error: {e}")
         return
@@ -397,65 +399,77 @@ def run(get_db):
     
     if st.button("👁️ Preview Invoice"):
         loan_data = df_loans[df_loans['loan_id'] == selected_loan].iloc[0].to_dict()
-        
+        client_data = {
+            "first_name": loan_data.get("first_name", ""),
+            "last_name": loan_data.get("last_name", ""),
+            "id_number": loan_data.get("id_number", ""),
+            "phone": loan_data.get("phone", "")
+        }
+
         with get_db() as conn:
             payments_data = pd.read_sql_query("""
                 SELECT date, amount, type
                 FROM payment_history
-                WHERE loan_id = ?
+                WHERE tenant_id = ? AND loan_id = ?
                 ORDER BY date DESC
-            """, conn, params=(selected_loan,))
-        
+            """, conn, params=(tenant_id, selected_loan,))
+
         # Generate Word document preview
-        doc = generate_invoice_docx(loan_data, loan_data, payments_data, selected_template)
-        
+        doc = generate_invoice_docx(loan_data, client_data, payments_data, selected_template)
+
         st.success("Preview generated (Word format)")
         doc_bytes = io.BytesIO()
         doc.save(doc_bytes)
-        
+
         st.download_button(
             label="📥 Download Word Preview",
             data=doc_bytes.getvalue(),
             file_name=f"Invoice_Preview_{selected_loan}_{datetime.now().strftime('%Y%m%d')}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
-    
+
     if st.button("✅ Generate Final Invoice"):
         loan_data = df_loans[df_loans['loan_id'] == selected_loan].iloc[0].to_dict()
-        
+        client_data = {
+            "first_name": loan_data.get("first_name", ""),
+            "last_name": loan_data.get("last_name", ""),
+            "id_number": loan_data.get("id_number", ""),
+            "phone": loan_data.get("phone", "")
+        }
+
         with get_db() as conn:
             payments_data = pd.read_sql_query("""
                 SELECT date, amount, type
                 FROM payment_history
-                WHERE loan_id = ?
+                WHERE tenant_id = ? AND loan_id = ?
                 ORDER BY date DESC
-            """, conn, params=(selected_loan,))
-        
+            """, conn, params=(tenant_id, selected_loan,))
+
         col1, col2 = st.columns(2)
-        
+
         with col1:
             # PDF
-            pdf = generate_invoice_pdf(loan_data, loan_data, payments_data, selected_template)
+            pdf = generate_invoice_pdf(loan_data, client_data, payments_data, selected_template)
             pdf_bytes = pdf.output(dest='S').encode('latin1')
-            
+
             st.download_button(
                 label="📄 Download PDF",
                 data=pdf_bytes,
                 file_name=f"Invoice_{selected_loan}_{datetime.now().strftime('%Y%m%d')}.pdf",
                 mime="application/pdf"
             )
-        
+
         with col2:
             # Word (Editable)
-            doc = generate_invoice_docx(loan_data, loan_data, payments_data, selected_template)
+            doc = generate_invoice_docx(loan_data, client_data, payments_data, selected_template)
             doc_bytes = io.BytesIO()
             doc.save(doc_bytes)
-            
+
             st.download_button(
                 label="📝 Download Word (Editable)",
                 data=doc_bytes.getvalue(),
                 file_name=f"Invoice_{selected_loan}_{datetime.now().strftime('%Y%m%d')}.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
-        
+
         st.success("Invoice generated successfully!")
