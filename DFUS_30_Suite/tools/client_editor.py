@@ -4,6 +4,11 @@ import pandas as pd
 import sqlite3
 
 def run(get_db):
+    tenant_id = st.session_state.get('tenant_id')
+    if not tenant_id:
+        st.error("Tenant session not found. Please log in again.")
+        return
+
     st.header("🛠️ Loan Editor")
 
     # Main tabs
