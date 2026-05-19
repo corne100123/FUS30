@@ -9,21 +9,56 @@ import os
 import re
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 
 import pandas as pd
 
+try:
+    import streamlit as st
+except ImportError:
+    st = None
+
+
+def _resolve_db_path(db_path=None):
+    """Resolve the SQLite path inside the DFUS_30_Suite folder."""
+    package_dir = os.path.dirname(__file__)
+    default_path = os.path.abspath(os.path.join(package_dir, 'fus30_operational.db'))
+
+    if db_path is None:
+        return default_path
+
+    db_path = str(db_path)
+    if not os.path.isabs(db_path):
+        return os.path.abspath(os.path.join(package_dir, db_path))
+
+    return os.path.abspath(db_path)
+
 
 @contextmanager
-def get_db_connection(db_path):
+def get_db_connection(db_path=None):
     """Context manager for database connections."""
+    db_path = _resolve_db_path(db_path)
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
         yield conn
     finally:
         conn.close()
+
+
+def _resolve_tenant_agent(tenant_id=None, agent_id=None):
+    """Resolve tenant and agent IDs from session state when not explicitly provided."""
+    if tenant_id is None:
+        tenant_id = st.session_state.get('tenant_id')
+    if agent_id is None:
+        agent_id = st.session_state.get('agent_id')
+
+    if tenant_id is None or agent_id is None:
+        raise ValueError('tenant_id and agent_id are required in session_state or must be passed explicitly.')
+
+    return tenant_id, agent_id
 
 
 def _hash_password(password):
@@ -423,10 +458,13 @@ def get_active_agents(db_path, tenant_id):
         return [dict(row) for row in cursor.fetchall()]
 
 
-def create_client(db_path, tenant_id, first_name, last_name, id_number, phone, email=None,
+def create_client(db_path, tenant_id=None, first_name=None, last_name=None, id_number=None, phone=None, email=None,
                   assigned_agent_id=None, address=None, salary=None, employer=None,
                   work_days=None, pay_day=None, bank_name=None, account_no=None):
-    """Create a new client under the tenant."""
+    """Create a new client under the tenant, using session tenant/agent if not passed."""
+    tenant_id, default_agent_id = _resolve_tenant_agent(tenant_id, assigned_agent_id)
+    assigned_agent_id = assigned_agent_id or default_agent_id
+
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -443,7 +481,8 @@ def create_client(db_path, tenant_id, first_name, last_name, id_number, phone, e
         return cursor.lastrowid
 
 
-def get_clients_by_agent(db_path, tenant_id, agent_id):
+def get_clients_by_agent(db_path, tenant_id=None, agent_id=None):
+    tenant_id, agent_id = _resolve_tenant_agent(tenant_id, agent_id)
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -474,7 +513,8 @@ def update_client_assignment(db_path, tenant_id, client_id, new_agent_id, reason
         return True
 
 
-def get_agent_portfolio(db_path, tenant_id, agent_id, search_term=None):
+def get_agent_portfolio(db_path, tenant_id=None, agent_id=None, search_term=None):
+    tenant_id, agent_id = _resolve_tenant_agent(tenant_id, agent_id)
     with get_db_connection(db_path) as conn:
         query = """
             SELECT c.client_id,
@@ -498,29 +538,33 @@ def get_agent_portfolio(db_path, tenant_id, agent_id, search_term=None):
         return [dict(row) for row in conn.execute(query, params).fetchall()]
 
 
-def get_loan_details(db_path, tenant_id, loan_id):
+def get_loan_details(db_path, tenant_id=None, loan_id=None, agent_id=None):
+    tenant_id, agent_id = _resolve_tenant_agent(tenant_id, agent_id)
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT * FROM loans
-            WHERE tenant_id = ? AND loan_id = ?
-        """, (tenant_id, loan_id))
+            WHERE tenant_id = ? AND loan_id = ? AND agent_id = ?
+        """, (tenant_id, loan_id, agent_id))
         row = cursor.fetchone()
     return dict(row) if row else None
 
 
-def record_payment(db_path, tenant_id, loan_id, agent_id, amount, pay_date, payment_type, receipt_path=None):
-    """Record a payment and update the loan balance."""
+def record_payment(db_path, tenant_id=None, loan_id=None, agent_id=None, amount=0.0, pay_date=None, payment_type=None, receipt_path=None):
+    tenant_id, agent_id = _resolve_tenant_agent(tenant_id, agent_id)
+    if pay_date is None:
+        pay_date = datetime.date.today().isoformat()
+
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT client_id, balance
             FROM loans
-            WHERE tenant_id = ? AND loan_id = ?
-        """, (tenant_id, loan_id))
+            WHERE tenant_id = ? AND loan_id = ? AND agent_id = ?
+        """, (tenant_id, loan_id, agent_id))
         loan = cursor.fetchone()
         if not loan:
-            raise ValueError('Loan not found for tenant')
+            raise ValueError('Loan not found for tenant and agent')
 
         new_balance = float(loan['balance'] or 0.0) - float(amount)
         status = 'Settled' if new_balance <= 0 else 'Active'
@@ -533,8 +577,8 @@ def record_payment(db_path, tenant_id, loan_id, agent_id, amount, pay_date, paym
         cursor.execute("""
             UPDATE loans
             SET balance = ?, amount_paid = amount_paid + ?, status = ?
-            WHERE tenant_id = ? AND loan_id = ?
-        """, (new_balance, amount, status, tenant_id, loan_id))
+            WHERE tenant_id = ? AND loan_id = ? AND agent_id = ?
+        """, (new_balance, amount, status, tenant_id, loan_id, agent_id))
 
         conn.commit()
         return cursor.lastrowid

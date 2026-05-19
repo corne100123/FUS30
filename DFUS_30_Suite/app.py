@@ -237,26 +237,12 @@ check_for_updates()
 role = st.session_state.role
 
 if role == "Agent":
-    st.sidebar.title(f"📱 {app_name} Mobile")
-    st.sidebar.caption(f"Tenant: {st.session_state.tenant_name}")
-    menu = ["🏠 Today's Collections", "👤 New Client", "➕ Issue Loan", "📥 Offline Sync", "💰 Cash-Up"]
-    choice = st.sidebar.radio("Main Menu", menu)
-
-    if choice == "🏠 Today's Collections":
-        from tools import payments_tool
-        payments_tool.run(get_db, None)
-    elif choice == "👤 New Client":
-        from tools import onboarding
-        onboarding.run(get_db(),selected_business)
-    elif choice == "➕ Issue Loan":
-        from tools import wizard
-        wizard.run(get_db, None)
-    elif choice == "📥 Offline Sync":
-        from tools import payments_tool
-        payments_tool.run(get_db, None)
-    elif choice == "💰 Cash-Up":
-        from tools import dashboard
-        dashboard.run(get_db)
+    try:
+        from agent_mobile_app import main as agent_mobile_main
+        agent_mobile_main()
+    except Exception as exc:
+        st.error(f"Failed to launch agent mobile view: {exc}")
+        st.stop()
 else:
     if role == "Admin":
         st.sidebar.title(f"👑 {app_name} Admin")
