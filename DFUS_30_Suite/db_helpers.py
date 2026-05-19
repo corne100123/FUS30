@@ -259,17 +259,55 @@ def initialize_schema(db_path):
             )
         """)
 
-        conn.commit()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS loan_contracts (
+                contract_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id INTEGER NOT NULL,
+                agent_id INTEGER NOT NULL,
+                client_id INTEGER NOT NULL,
+                loan_id INTEGER NOT NULL,
+                contract_path TEXT,
+                signature_path TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id),
+                FOREIGN KEY(agent_id) REFERENCES agents(agent_id),
+                FOREIGN KEY(client_id) REFERENCES clients(client_id),
+                FOREIGN KEY(loan_id) REFERENCES loans(loan_id)
+            )
+            """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS unallocated_eft_queue (
+                queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tenant_id INTEGER NOT NULL,
+                assigned_agent_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                bank_name TEXT,
+                account_no TEXT,
+                reference TEXT,
+                received_date TEXT,
+                status TEXT DEFAULT 'Pending',
+                allocated_loan_id INTEGER,
+                allocated_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id),
+                FOREIGN KEY(assigned_agent_id) REFERENCES agents(agent_id),
+                FOREIGN KEY(allocated_loan_id) REFERENCES loans(loan_id)
+            )
+            """)
 
 
 def register_tenant(db_path, business_name, ncr_registration_number, address=None, email=None, phone=None):
     """Register a new tenant/business."""
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO tenants (business_name, ncr_registration_number, address, email, phone)
             VALUES (?, ?, ?, ?, ?)
-        """, (business_name, ncr_registration_number, address, email, phone))
+            """,
+            (business_name, ncr_registration_number, address, email, phone)
+        )
         conn.commit()
         return cursor.lastrowid
 

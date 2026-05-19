@@ -8,3 +8,7 @@ python-docx
 Jinja2
 WeasyPrint
 Pillow
+cryptography
+folium
+streamlit-folium
+streamlit-drawable-canvas

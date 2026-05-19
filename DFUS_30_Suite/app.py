@@ -261,11 +261,34 @@ else:
     if role == "Admin":
         st.sidebar.title(f"👑 {app_name} Admin")
         st.sidebar.caption(f"Tenant: {st.session_state.tenant_name}")
-        menu = ["👥 User Management", "🏠 Dashboard", "👤 Onboarding", "📝 Client Editor", "➕ Loan Wizard", "💸 Payments", "📊 Reports", "📄 Invoices", "📥 Compliance Vault"]
+        menu = [
+            "👥 User Management",
+            "🏠 Dashboard",
+            "👤 Onboarding",
+            "📝 Client Editor",
+            "➕ Loan Wizard",
+            "💸 Payments",
+            "📊 Reports",
+            "🧾 Approval Queue",
+            "📄 Invoices",
+            "🏷️ Product Admin",
+            "📥 Compliance Vault",
+        ]
     else:
         st.sidebar.title(f"🏢 {app_name} Manager")
         st.sidebar.caption(f"Tenant: {st.session_state.tenant_name}")
-        menu = ["🏠 Dashboard", "👤 Onboarding", "📝 Client Editor", "➕ Loan Wizard", "💸 Payments", "📊 Reports", "📄 Invoices", "📥 Compliance Vault"]
+        menu = [
+            "🏠 Dashboard",
+            "👤 Onboarding",
+            "📝 Client Editor",
+            "➕ Loan Wizard",
+            "💸 Payments",
+            "📊 Reports",
+            "🧾 Approval Queue",
+            "📄 Invoices",
+            "🏷️ Product Admin",
+            "📥 Compliance Vault",
+        ]
 
     choice = st.sidebar.radio("System Menu", menu)
 
@@ -293,6 +316,16 @@ else:
     elif choice == "📄 Invoices":
         from tools import invoice_tool
         invoice_tool.run(get_db)
+    elif choice == "🧾 Approval Queue":
+        from tools import manager_review
+        manager_review.run(get_db)
+    elif choice == "🏷️ Product Admin":
+        # Lazy import our product admin page and run it
+        try:
+            from product_admin import main as product_admin_main
+            product_admin_main()
+        except Exception as exc:
+            st.error(f"Failed to load Product Admin: {exc}")
     elif choice == "📥 Compliance Vault":
         from tools import security_tool
         security_tool.run(get_db)

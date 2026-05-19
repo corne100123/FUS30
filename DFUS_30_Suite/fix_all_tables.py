@@ -129,11 +129,15 @@ def run_fix():
             agent_id INTEGER,
             principal REAL,
             balance REAL,
+            amount_paid REAL DEFAULT 0.0,
             status TEXT,
-            due_date DATE
+            due_date DATE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     _safe_add_column(cursor, 'loans', 'tenant_id INTEGER NOT NULL DEFAULT 1')
+    _safe_add_column(cursor, 'loans', 'amount_paid REAL DEFAULT 0.0')
+    _safe_add_column(cursor, 'loans', 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
 
     print("Checking 'payment_history' table...")
     cursor.execute("""
@@ -141,12 +145,20 @@ def run_fix():
             payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
             tenant_id INTEGER NOT NULL,
             loan_id INTEGER,
+            agent_id INTEGER,
             amount REAL,
-            date_paid DATE,
-            method TEXT
+            date TEXT,
+            type TEXT,
+            receipt_path TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     _safe_add_column(cursor, 'payment_history', 'tenant_id INTEGER NOT NULL DEFAULT 1')
+    _safe_add_column(cursor, 'payment_history', 'agent_id INTEGER')
+    _safe_add_column(cursor, 'payment_history', 'date TEXT')
+    _safe_add_column(cursor, 'payment_history', 'type TEXT')
+    _safe_add_column(cursor, 'payment_history', 'receipt_path TEXT')
+    _safe_add_column(cursor, 'payment_history', 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
 
     print("Checking 'expenses' table...")
     cursor.execute("""
@@ -237,6 +249,55 @@ def run_fix():
         )
     """)
     _safe_add_column(cursor, 'compliance_documents', 'tenant_id INTEGER NOT NULL DEFAULT 1')
+
+    print("Checking 'loan_contracts' table...")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS loan_contracts (
+            contract_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER NOT NULL,
+            agent_id INTEGER NOT NULL,
+            client_id INTEGER NOT NULL,
+            loan_id INTEGER NOT NULL,
+            contract_path TEXT,
+            signature_path TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    _safe_add_column(cursor, 'loan_contracts', 'tenant_id INTEGER NOT NULL DEFAULT 1')
+
+    print("Checking 'unallocated_eft_queue' table...")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS unallocated_eft_queue (
+            queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER NOT NULL,
+            assigned_agent_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            bank_name TEXT,
+            account_no TEXT,
+            reference TEXT,
+            received_date TEXT,
+            status TEXT DEFAULT 'Pending',
+            allocated_loan_id INTEGER,
+            allocated_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    _safe_add_column(cursor, 'unallocated_eft_queue', 'tenant_id INTEGER NOT NULL DEFAULT 1')
+
+    print("Checking 'loan_approval_history' table...")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS loan_approval_history (
+            approval_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER NOT NULL,
+            loan_id INTEGER NOT NULL,
+            approver_user_id INTEGER,
+            approver_role TEXT,
+            action TEXT NOT NULL,
+            comments TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    _safe_add_column(cursor, 'loan_approval_history', 'tenant_id INTEGER NOT NULL DEFAULT 1')
 
     conn.commit()
     conn.close()
