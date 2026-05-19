@@ -260,6 +260,16 @@ if role == "Agent":
             "Agent profile not found. Please ensure this user is mapped to an active agent record by an administrator. "
             "If you are not an agent, log in with a Manager or Admin account."
         )
+        if st.button("Clear session and return to login"):
+            st.session_state.role = None
+            st.session_state.tenant_id = None
+            st.session_state.tenant_name = None
+            st.session_state.username = None
+            st.session_state.user_id = None
+            st.session_state.full_name = None
+            if st.session_state.get('config'):
+                clear_session()
+            st.experimental_rerun()
         st.stop()
 
     try:
