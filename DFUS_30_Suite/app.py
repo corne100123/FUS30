@@ -13,6 +13,7 @@ from db_helpers import (
     authenticate_user,
     get_tenant_by_id,
     get_user,
+    get_agent_by_user_id,
 )
 from fix_all_tables import run_fix
 
@@ -145,6 +146,21 @@ try:
 except Exception as e:
     pass  # Ignore errors, as it might fail if already fixed
 
+
+def _resolve_agent_profile(db_path):
+    if st.session_state.get('agent_id'):
+        return st.session_state.agent_id
+
+    if not st.session_state.get('tenant_id') or not st.session_state.get('user_id'):
+        return None
+
+    agent = get_agent_by_user_id(db_path, st.session_state.tenant_id, st.session_state.user_id)
+    if agent:
+        st.session_state.agent_id = agent['agent_id']
+        return agent['agent_id']
+    return None
+
+
 # --- PRE-LOGIN TENANT ROUTING ---
 if not st.session_state.tenant_id or not st.session_state.role:
     st.title(f"🔐 {app_name} Access")
@@ -237,6 +253,15 @@ check_for_updates()
 role = st.session_state.role
 
 if role == "Agent":
+    db_path = st.session_state.config.get('db_path') if st.session_state.get('config') else None
+    agent_id = _resolve_agent_profile(db_path)
+    if not agent_id:
+        st.error(
+            "Agent profile not found. Please ensure this user is mapped to an active agent record by an administrator. "
+            "If you are not an agent, log in with a Manager or Admin account."
+        )
+        st.stop()
+
     try:
         from agent_mobile_app import main as agent_mobile_main
         agent_mobile_main()
